@@ -1,0 +1,5 @@
+{
+  "enabledPlugins": {
+    "claude-mermaid-ascii@claude-mermaid-ascii": true
+  }
+}

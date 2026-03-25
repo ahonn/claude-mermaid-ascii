@@ -1,0 +1,9 @@
+{
+  "name": "claude-mermaid-ascii",
+  "description": "Render Mermaid diagrams as ASCII/Unicode art in the terminal",
+  "version": "0.1.0",
+  "author": {
+    "name": "ahonn",
+    "url": "https://github.com/ahonn"
+  }
+}
