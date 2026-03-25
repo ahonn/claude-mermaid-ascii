@@ -1,0 +1,120 @@
+name: Build mermaid-ascii binaries
+
+on:
+  workflow_dispatch:
+    inputs:
+      commit_sha:
+        description: "pgavlin/mermaid-ascii commit SHA to build (default: latest main)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        include:
+          - goos: darwin
+            goarch: arm64
+          - goos: darwin
+            goarch: amd64
+          - goos: linux
+            goarch: arm64
+          - goos: linux
+            goarch: amd64
+    steps:
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: "1.25"
+
+      - name: Clone mermaid-ascii
+        run: git clone https://github.com/pgavlin/mermaid-ascii.git src
+
+      - name: Checkout specific commit
+        if: inputs.commit_sha != ''
+        working-directory: src
+        run: git checkout ${{ inputs.commit_sha }}
+
+      - name: Get commit SHA
+        id: get-sha
+        working-directory: src
+        run: echo "sha=$(git rev-parse --short HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Build binary
+        working-directory: src
+        env:
+          CGO_ENABLED: "0"
+          GOOS: ${{ matrix.goos }}
+          GOARCH: ${{ matrix.goarch }}
+        run: go build -trimpath -ldflags="-s -w" -o ../mermaid-ascii_${{ matrix.goos }}_${{ matrix.goarch }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: mermaid-ascii_${{ matrix.goos }}_${{ matrix.goarch }}
+          path: mermaid-ascii_${{ matrix.goos }}_${{ matrix.goarch }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout plugin repo
+        uses: actions/checkout@v4
+
+      - name: Clone mermaid-ascii for commit info
+        run: git clone https://github.com/pgavlin/mermaid-ascii.git src
+
+      - name: Checkout specific commit
+        if: inputs.commit_sha != ''
+        working-directory: src
+        run: git checkout ${{ inputs.commit_sha }}
+
+      - name: Get commit info
+        id: commit-info
+        working-directory: src
+        run: |
+          SHA=$(git rev-parse --short HEAD)
+          FULL_SHA=$(git rev-parse HEAD)
+          DATE=$(git log -1 --format=%cd --date=short)
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          echo "full_sha=$FULL_SHA" >> "$GITHUB_OUTPUT"
+          echo "date=$DATE" >> "$GITHUB_OUTPUT"
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: binaries
+          merge-multiple: true
+
+      - name: Make binaries executable
+        run: chmod +x binaries/*
+
+      - name: Create or update release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="bin-${{ steps.commit-info.outputs.sha }}"
+          TITLE="mermaid-ascii @ ${{ steps.commit-info.outputs.sha }}"
+          BODY="Built from [pgavlin/mermaid-ascii](https://github.com/pgavlin/mermaid-ascii) commit [\`${{ steps.commit-info.outputs.sha }}\`](https://github.com/pgavlin/mermaid-ascii/commit/${{ steps.commit-info.outputs.full_sha }}) (${{ steps.commit-info.outputs.date }})"
+
+          # Delete existing release with same tag if any
+          gh release delete "$TAG" --yes 2>/dev/null || true
+          git push origin --delete "$TAG" 2>/dev/null || true
+
+          # Create release
+          gh release create "$TAG" \
+            --title "$TITLE" \
+            --notes "$BODY" \
+            binaries/*
+
+          # Also update the "latest-bin" release for easy download
+          gh release delete "latest-bin" --yes 2>/dev/null || true
+          git push origin --delete "latest-bin" 2>/dev/null || true
+          gh release create "latest-bin" \
+            --title "mermaid-ascii (latest)" \
+            --notes "$BODY" \
+            binaries/*
