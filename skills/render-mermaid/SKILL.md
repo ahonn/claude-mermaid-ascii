@@ -1,79 +1,64 @@
 ---
 name: render-mermaid
 description: >
-  Renders Mermaid diagram definitions as ASCII/Unicode art in the terminal
-  using mermaid-ascii. Use when the user asks to visualize, render, preview,
-  or display a Mermaid diagram in the terminal.
+  Render Mermaid diagrams as ASCII/Unicode art in the terminal using mermaid-ascii.
+  Use when the user asks to visualize, render, preview, display, draw, or show
+  a Mermaid diagram as text or ASCII art. Also use when Claude has just written
+  Mermaid code and the user wants to see the rendered output.
+  Supports all 22 Mermaid diagram types: flowchart, sequence, class, state, ER,
+  gantt, pie, mindmap, timeline, gitgraph, journey, quadrant, xychart, C4,
+  requirement, block, sankey, packet, kanban, architecture, zenuml.
 argument-hint: [mermaid code or .mmd file path]
 user-invocable: true
-allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/*), Bash(mermaid-ascii *), Read, Write
+allowed-tools: Bash(${CLAUDE_PLUGIN_ROOT}/*), Bash(${CLAUDE_PLUGIN_DATA}/*), Read
 ---
 
-# Render Mermaid Diagram
+## Setup
 
-Render Mermaid diagram definitions as ASCII/Unicode art directly in the terminal.
-
-## Instructions
-
-You have access to `mermaid-ascii` via the plugin's bundled binary. Follow these steps:
-
-### Step 1: Ensure binary is available
-
-Run the ensure-binary script. This is a no-op if the binary already exists:
+Ensure binary exists (no-op if already installed):
 
 ```bash
 ${CLAUDE_PLUGIN_ROOT}/scripts/ensure-binary.sh
 ```
 
-If the script fails, inform the user and suggest manual installation:
-- `go install github.com/pgavlin/mermaid-ascii@latest` (requires Go 1.25+)
+## Render
 
-### Step 2: Determine input
-
-The user provides `$ARGUMENTS` which is one of:
-
-1. **A file path** (ends with `.mmd` or `.mermaid`) — use it directly
-2. **Inline Mermaid code** — write it to a temp file first
-
-For inline code, write to a temp file:
+Run in a single Bash call — write input, render to output file, clean up input:
 
 ```bash
-TMPFILE=$(mktemp /tmp/mermaid-XXXXXX.mmd)
-```
-
-Use the Write tool to write the Mermaid code to `$TMPFILE`.
-
-### Step 3: Render
-
-```bash
-${CLAUDE_PLUGIN_ROOT}/bin/mermaid-ascii -f <file>
-```
-
-If the plugin binary is not available, fall back to:
-
-```bash
-mermaid-ascii -f <file>
-```
-
-### Step 4: Clean up
-
-If a temp file was created, remove it:
-
-```bash
+TMPFILE=$(mktemp /tmp/mermaid.XXXXXX.mmd)
+OUTFILE=$(mktemp /tmp/mermaid-out.XXXXXX)
+cat > "$TMPFILE" << 'MERMAID'
+<mermaid code, one statement per line>
+MERMAID
+"${CLAUDE_PLUGIN_DATA}/bin/mermaid-ascii" -f "$TMPFILE" > "$OUTFILE" 2>&1
 rm -f "$TMPFILE"
+echo "$OUTFILE"
 ```
 
-## CLI Flags
+If `$ARGUMENTS` is a file path (.mmd/.mermaid), use it directly instead of creating `$TMPFILE`.
 
-You may use these flags when rendering if the user requests specific formatting:
+**Bash must only output the `$OUTFILE` path** — all render output goes to the file to avoid UI collapsing.
 
-| Flag | Description | Default |
-|------|-------------|---------|
-| `-a` | ASCII-only (no Unicode box-drawing characters) | off |
-| `-p <n>` | Padding between text and border | 1 |
-| `-x <n>` | Horizontal space between nodes | 5 |
-| `-y <n>` | Vertical space between nodes | 5 |
+## Display
 
-## Supported Diagram Types
+Read `$OUTFILE` with the Read tool, then present the content in a fenced code block.
 
-See [supported-diagrams.md](./supported-diagrams.md) for the full list of supported diagram types with syntax examples.
+## Input rules
+
+- **No semicolons**: `graph LR; A --> B` does NOT work. Always use multi-line:
+  ```
+  graph LR
+      A --> B
+  ```
+- **Chain syntax works**: `A --> B --> C` on one line is fine
+
+## CLI flags
+
+| Flag | Default | Effect |
+|------|---------|--------|
+| `-a` | off | ASCII-only (no Unicode box-drawing) |
+| `-w <n>` | terminal width | Target output width in characters |
+| `-p <n>` | 1 | Text-to-border padding |
+| `-x <n>` | 5 | Horizontal node spacing |
+| `-y <n>` | 5 | Vertical node spacing |
