@@ -1,5 +1,4 @@
 name: Build mermaid-ascii binaries
-
 on:
   workflow_dispatch:
     inputs:
